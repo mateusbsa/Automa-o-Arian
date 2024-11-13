@@ -3,6 +3,16 @@
 #include <WiFi.h>
 #include <Firebase_ESP_Client.h>
 
+#include <DHT.h>
+
+// Configurações do DHT11
+#define DHTPIN 34      // Porta digital onde o DHT11 está conectado
+#define DHTTYPE DHT11  // Define o tipo de DHT
+DHT dht(DHTPIN, DHTTYPE);
+
+// Configuração do LDR
+#define LDR_PIN 35    // Porta analógica onde o LDR está conectado
+
 // Firebase esp Client 2.3.7
 
 // Provide the token generation process info.
@@ -11,8 +21,8 @@
 #include "addons/RTDBHelper.h"
 
 //======================================== Insert your network credentials.
-const char* WIFI_SSID = "ATUALIZE_INTELBRASS";
-const char* WIFI_PASSWORD = "12345678";
+const char* WIFI_SSID = "MATEUS 1166";
+const char* WIFI_PASSWORD = "v6&48A12";
 //======================================== 
 WiFiServer server(80);
 
@@ -103,6 +113,7 @@ void setup() {
     CONFIG_RADIO();
     CONFIG_WIFI();
     CONFIG_FIREBASE();
+    dht.begin();      
    
 }
 
@@ -141,6 +152,7 @@ void loop() {
         Serial.print('.');
         delay(1000);
     }
+    Sensores();
 /*
     ENVIA_SETUP_CONFIGURACAO(1);
 
@@ -324,7 +336,7 @@ void enviaFirebase(int ATIVIDADE, int ESTADO, int HORA, int MINUTO, int SEGUNDO)
         delay(25);
         }*/
 }
-
+/*
 void enviarDadosFirebase(int grupoIndex) {
     // Caminho base para o grupo e chave única para cada dado
     String caminhoBase = "/Grupo/" + String(BOMBAS[grupoIndex].INICIO_IRRIGACAO.unixtime());
@@ -352,4 +364,30 @@ void enviarDadosFirebase(int grupoIndex) {
     Firebase.RTDB.pushInt(&fbdo, caminhoBase + "/HORA_RESTANTE", BOMBAS[grupoIndex].HORA_RESTANTE);
 
     Serial.println("Dados enviados para o Firebase com push.");
+}
+*/
+void Sensores(){
+    // Leitura dos dados do DHT11
+  float temperatura = dht.readTemperature();
+  float umidade = dht.readHumidity();
+
+  // Verifica se as leituras são válidas
+  if (isnan(temperatura) || isnan(umidade)) {
+    Serial.println("Falha na leitura do DHT11!");
+  } else {
+    Serial.print("Temperatura: ");
+    Serial.print(temperatura);
+    Serial.println(" °C");
+
+    Serial.print("Umidade: ");
+    Serial.print(umidade);
+    Serial.println(" %");
+  }
+
+  // Leitura do LDR
+  int valorLDR = analogRead(LDR_PIN);
+  Serial.print("Valor do LDR: ");
+  Serial.println(valorLDR);
+
+  delay(2000); // Intervalo de 2 segundos entre leituras
 }
