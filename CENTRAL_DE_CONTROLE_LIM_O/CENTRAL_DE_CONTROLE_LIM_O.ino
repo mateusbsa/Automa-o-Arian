@@ -3,6 +3,7 @@
 #include <EEPROM.h>   
 #include "FS.h"     // Sistema de Arquivos
 #include "SPIFFS.h" // SPIFFS no ESP32
+#include <ArduinoJson.h>
 
 hw_timer_t *timer = NULL; //faz o controle do temporizador (interrupção por tempo)
 
@@ -95,9 +96,10 @@ int indica_inicio = 1001;  //ENVIA PARA CENTRAL DE COMANDOS O SINAL DEQUE ESTÁ 
 int SETORES_BOMBA1[6] = {SOLENOIDE_A,SOLENOIDE_B,-1,-1,-1,-1};
 int SETORES_BOMBA2[6] = {SOLENOIDE_C,SOLENOIDE_D,SOLENOIDE_E,SOLENOIDE_F,-1,-1};
 //int MINUTOS_SETORES[6] = {240,240,120,120,120,120};
+//int MINUTOS_SETORES[6] = {5,5,5,5,5,5};
 int MINUTOS_SETORES[6] = {2,2,2,2,2,2};
 //int HORA_FUNCIONAMENTO[2] = {5,17};
-int HORA_FUNCIONAMENTO[2] = {5,24};
+int HORA_FUNCIONAMENTO[2] = {5,16};
 
 
 //int MINUTOS_SETORES[6] = {2,2,5,5,5,5};
@@ -118,6 +120,8 @@ struct GRUPO {
     int SETOR_ANTERIOR = false;
     
     DateTime INICIO_IRRIGACAO;
+    DateTime HORA_INICIO_IRRIGACAO;
+    DateTime FIM_IRRIGACAO;
     DateTime INICIO_SETORES[6];
     int HORA_INICIO = 0;
     int MINUTO_INICIO = 0;
@@ -164,7 +168,7 @@ DateTime INICIO_IRRIGACAO;
 char daysOfTheWeek[7][12] = {"DOMINGO", "SEGUNDA", "TERCA", "QUARTA", "QUINTA", "SEXTA", "SABADO"};
 
 
-
+int dados_buffer = 0;
 int cont = 0;
 int minuto = 0;
 int segundo = 0;
@@ -478,6 +482,12 @@ void loop() {
         else if(entrada == '4'){
             lerLogs();
         }
+        else if(entrada == '5'){
+            exibirDados();
+        }
+        else if(entrada == '6'){
+            SPIFFS.remove("/dados.bin");
+        }
     }
     
     
@@ -605,9 +615,6 @@ void loop() {
    
 }
 
-bool DIA_HORA(){
-    
-}
 
 void SERIAL_TIME(DateTime now){
     Serial.print(now.year(), DEC);
@@ -664,138 +671,47 @@ void SERIAL_TIME(DateTime now){
 }
 
 
-void REGISTRO_IRRIGACAO( int ATIVIDADE,int ESTADO){
+void REGISTRO_IRRIGACAO(){
 
     DateTime now = rtc.now();
     
     Serial.println("Função REGISTRO_IRRIGAÇÃO  |  ");
-    Serial.print("A: ");
-    Serial.print(ATIVIDADE);
-    Serial.print(" |  E: ");
-    Serial.println(ESTADO);
 
-    switch(ATIVIDADE) {
+    //gerarLog();
 
-        //INICIA BOMBA 1
-        case BOMBA1:
-            if(ESTADO == 0){
-                REGISTRO[0] = 1;
-            }else{
-                REGISTRO[0] = 0;
-            }
-            break;
 
-        //INICIA BOMBA 2
-        case BOMBA2:
-            if(ESTADO == 0){
-                REGISTRO[1] = 1;
-            }else{
-                REGISTRO[1] = 0;
-            }
-            break;
-
-        //SETOR A
-        case SOLENOIDE_A:
-            if(ESTADO == 0){
-                REGISTRO[2] = 1;
-            }else{
-                REGISTRO[2] = 0;
-            }
-            break;
-
-        //SETOR B
-        case SOLENOIDE_B:
-            if(ESTADO == 0){
-                REGISTRO[3] = 1;
-            }else{
-                REGISTRO[3] = 0;
-            }
-            break;
-
-        //SETOR C
-        case SOLENOIDE_C:
-            if(ESTADO == 0){
-                REGISTRO[4] = 1;
-            }else{
-                REGISTRO[4] = 0;
-            }
-            break;
-
-        //SETOR D
-        case SOLENOIDE_D:
-            if(ESTADO == 0){
-                REGISTRO[5] = 1;
-            }else{
-                REGISTRO[5] = 0;
-            }
-            break;
-
-        //SETOR E
-        case SOLENOIDE_E:
-            if(ESTADO == 0){
-                REGISTRO[6] = 1;
-            }else{
-                REGISTRO[6] = 0;
-            }
-            break;
-
-        //SETOR F
-        case SOLENOIDE_F:
-            if(ESTADO == 0){
-                REGISTRO[7] = 1;
-            }else{
-                REGISTRO[7] = 0;
-            }
-            break;
-        
-        
-
-        default:
-            Serial.print("Deu Ruim");
-    }
-    //DATA E HORA
-    DATA_ENVIO[2] = now.hour();
-    DATA_ENVIO[3] = now.minute();
-    DATA_ENVIO[4] = now.second();
-
-    ENVIA_RADIO(ATIVIDADE,ESTADO);
-    //ENVIA_RADIO(2);
-
-    
+    //ENVIA_RADIO(ATIVIDADE,ESTADO);
+    ENVIA_RADIO(BOMBAS[0]);
+    delay(250);
+    ENVIA_RADIO(BOMBAS[1]);
 
 }
 
-void ENVIA_RADIO(int ENVIO, int ESTADO){
+void ENVIA_RADIO(GRUPO BOMBAS){
 
     SET_ENVIA_RADIO();
 
-    DATA_ENVIO[0] = ENVIO;
-    DATA_ENVIO[1] = ESTADO;
-    DATA_ENVIO[5] = 200;
+    bool TX_CONFIRMA;
+    TX_CONFIRMA = radio.write(&BOMBAS, sizeof(BOMBAS));
+    
 
-    int remoteNodeData;
-
-    for(int i = 0; i<6; i++){
-
-        bool TX_CONFIRMA;
-        TX_CONFIRMA = radio.write(&DATA_ENVIO[i], sizeof(DATA_ENVIO[i]));
-        delay(500);
-
-        if (TX_CONFIRMA) {
-            if (radio.isAckPayloadAvailable()) {
-                
-                // read ack payload and copy data to relevant remoteNodeData array
-                radio.read(&remoteNodeData, sizeof(remoteNodeData));
-                
-                //Serial.print("[+] Successfully received data from node: ");
-            }
+    if (TX_CONFIRMA) {
+        if (radio.isAckPayloadAvailable()) {
             
+            // read ack payload and copy data to relevant remoteNodeData array
+            //radio.read(&remoteNodeData, sizeof(remoteNodeData));
+            
+            Serial.println("[+] Successfully received data from node: ");
         }
-        else {
-            //Serial.print("[-] The transmission to the selected node failed.");
-        }
-     
+        
     }
+    else {
+        Serial.println("[-] The transmission to the selected node failed.");
+        //salvarDados();
+        //dados_buffer++;
+    }
+     
+    
 
     SET_LER_RADIO();
 }
@@ -894,10 +810,15 @@ void ATIVA_CARGA(const int CARGA, bool ESTADO, int GRUPO){
     registrarLog("Função ATIVA_CARGA chamada.");
     registrarLog("Carga: " + String(CARGA) + " | Estado: " + String(ESTADO));
     
-    REGISTRO_IRRIGACAO(CARGA, ESTADO); 
+    //REGISTRO_IRRIGACAO(); 
     
     
     digitalWrite(CARGA, ESTADO);
+    /*if(dados_buffer> 0){
+         Serial.println("REsgatar");
+        resgatarEDispararDados();
+        dados_buffer = 0;
+    }*/
 }
 
 void SETORES_ATIVOS(int GRUPO){
@@ -941,6 +862,7 @@ void INCIA_IRRIGACAO(int GRUPO){
     ATIVA_CARGA(BOMBAS[GRUPO].BOMBA,LOW, GRUPO);
 
     BOMBAS[GRUPO].INICIO_IRRIGACAO = rtc.now();
+    BOMBAS[GRUPO].HORA_INICIO_IRRIGACAO = rtc.now();
 
     //REGISTRO_IRRIGACAO(7,1); // 7->inicia irrigação | 1->true
     
@@ -954,6 +876,8 @@ void INCIA_IRRIGACAO(int GRUPO){
 
     BOMBAS[GRUPO].IRRIGACAO_INICIADA = true;
     registrarLog("Irrigação iniciada para o grupo: " + String(GRUPO));
+
+    REGISTRO_IRRIGACAO();
 }
 
 void FINALIZA_IRRIGACAO(int GRUPO){
@@ -978,13 +902,16 @@ void FINALIZA_IRRIGACAO(int GRUPO){
         Serial.println(BOMBAS[GRUPO].SETORES[i]);
     }
     
-    DateTime FIM_IRRIGACAO = rtc.now();
+    DateTime HORA_FIM_IRRIGACAO = rtc.now();
     
-    BOMBAS[GRUPO].HORA_INICIO = FIM_IRRIGACAO.hour();
-    BOMBAS[GRUPO].MINUTO_INICIO = FIM_IRRIGACAO.minute();
+    BOMBAS[GRUPO].HORA_INICIO = HORA_FUNCIONAMENTO[0];
+    BOMBAS[GRUPO].MINUTO_INICIO = 0;
     Serial.println(BOMBAS[GRUPO].BOMBA_ATIVADA);
+    BOMBAS[GRUPO].FIM_IRRIGACAO = HORA_FIM_IRRIGACAO;
     //DEFINIR_TEMPO_IRRIGACAO(BOMBAS[GRUPO].SETOR_VEZ_BOMBA, FIM_IRRIGACAO,2, GRUPO); 
-    registrarLog("Irrigação finalizada para o grupo: " + String(GRUPO) + " às " + String(FIM_IRRIGACAO.hour()) + ":" + String(FIM_IRRIGACAO.minute()));
+    registrarLog("Irrigação finalizada para o grupo: " + String(GRUPO) + " às " + String(HORA_FIM_IRRIGACAO.hour()) + ":" + String(HORA_FIM_IRRIGACAO.minute()));
+
+    REGISTRO_IRRIGACAO();
 }
 
 
@@ -1000,6 +927,8 @@ void ENCERRA_SETOR_ANTERIOR(int GRUPO){
     ATIVA_CARGA(BOMBAS[GRUPO].SETORES[BOMBAS[GRUPO].SETOR_VEZ_BOMBA-1], HIGH, GRUPO);
     BOMBAS[GRUPO].SETOR_ANTERIOR = false;
     //SETOR_EM_ATIVIDADE[SETOR_VEZ-1] = true;
+
+    REGISTRO_IRRIGACAO();
 }
 
 
@@ -1030,6 +959,8 @@ void IRRIGACAO(int GRUPO){
         
         IRRIGADOS[GRUPO] = 1;
         //SETOR_EM_ATIVIDADE[SETOR_VEZ] = 0;
+
+        REGISTRO_IRRIGACAO();
     }else if(BOMBAS[GRUPO].SETOR_VEZ_BOMBA == BOMBAS[GRUPO].QUANTIDADE_SETORES_BOMBA && !BOMBAS[GRUPO].CONTINUACAO_IRRIGACAO){
         BOMBAS[GRUPO].IRRIGACAO_INICIADA = false;
         registrarLog("Setor da vez é o ultimo setor.");
@@ -1396,7 +1327,7 @@ void gerarLog() {
         }
         
         Serial.print("INICIO_IRRIGACAO: ");
-        Serial.println(grupo.INICIO_IRRIGACAO.timestamp()); // Supondo que seja um timestamp
+        Serial.println(grupo.HORA_INICIO_IRRIGACAO.timestamp()); // Supondo que seja um timestamp
         for (int i = 0; i < grupo.QUANTIDADE_SETORES_BOMBA; i++) {
             Serial.print("Setor ");
             Serial.print(i);
@@ -1405,6 +1336,8 @@ void gerarLog() {
             Serial.print(" : ");
             Serial.println(grupo.INICIO_SETORES[i].timestamp());
         }
+        Serial.print("FIM_IRRIGACAO: ");
+        Serial.println(grupo.FIM_IRRIGACAO.timestamp()); // Supondo que seja um timestamp
         Serial.print("HORA_INICIO: ");
         Serial.println(grupo.HORA_INICIO);
         Serial.print("MINUTO_INICIO: ");
@@ -1568,4 +1501,179 @@ void deletarTodosArquivos() {
     }
 
     Serial.println("Todos os arquivos foram deletados.");
+}
+
+void salvarDados() {
+    File file = SPIFFS.open("/dados.bin", FILE_WRITE);
+    if (!file) {
+        Serial.println("Erro ao abrir arquivo para escrita");
+        return;
+    }
+
+    // Escrever os dados binários no arquivo
+    for (int i = 0; i < 2; i++) {
+        file.write((uint8_t*)&BOMBAS[i], sizeof(GRUPO));
+    }
+
+    file.close();
+    Serial.println("Dados salvos no SPIFFS");
+}
+
+void exibirDados() {
+    File file = SPIFFS.open("/dados.bin", FILE_READ);
+    if (!file) {
+        Serial.println("Erro ao abrir arquivo para leitura");
+        return;
+    }
+
+    // Ler os dados binários e carregar nas estruturas
+    for (int i = 0; i < 2; i++) {
+        file.read((uint8_t*)&BOMBAS[i], sizeof(GRUPO));
+        
+        // Exibindo os valores da estrutura BOMBAS[i]
+        Serial.println("Bomba " + String(i));
+
+        // Variáveis simples
+        Serial.print("QUANTIDADE_SETORES_BOMBA: ");
+        Serial.println(BOMBAS[i].QUANTIDADE_SETORES_BOMBA);
+        
+        Serial.print("SETOR_VEZ_BOMBA: ");
+        Serial.println(BOMBAS[i].SETOR_VEZ_BOMBA);
+        
+        Serial.print("BOMBA: ");
+        Serial.println(BOMBAS[i].BOMBA);
+        
+        Serial.print("TROCA_DE_SETOR: ");
+        Serial.println(BOMBAS[i].TROCA_DE_SETOR);
+        
+        Serial.print("INICIO_SETUP_IRRIGACAO_BOMBA: ");
+        Serial.println(BOMBAS[i].INICIO_SETUP_IRRIGACAO_BOMBA);
+        
+        Serial.print("BOMBA_ATIVADA: ");
+        Serial.println(BOMBAS[i].BOMBA_ATIVADA);
+
+        Serial.print("SETOR_ANTERIOR: ");
+        Serial.println(BOMBAS[i].SETOR_ANTERIOR);
+
+        // Formatando e exibindo INICIO_IRRIGACAO, HORA_INICIO_IRRIGACAO, FIM_IRRIGACAO
+        Serial.print("INICIO_IRRIGACAO: ");
+        Serial.println(formatDateTime(BOMBAS[i].INICIO_IRRIGACAO));
+
+        Serial.print("HORA_INICIO_IRRIGACAO: ");
+        Serial.println(formatDateTime(BOMBAS[i].HORA_INICIO_IRRIGACAO));
+
+        Serial.print("FIM_IRRIGACAO: ");
+        Serial.println(formatDateTime(BOMBAS[i].FIM_IRRIGACAO));
+
+        // Arrays de DateTime
+        for (int j = 0; j < 6; j++) {
+            Serial.print("INICIO_SETORES[" + String(j) + "]: ");
+            Serial.println(formatDateTime(BOMBAS[i].INICIO_SETORES[j]));
+        }
+
+        // Variáveis de hora e minuto
+        Serial.print("HORA_INICIO: ");
+        Serial.println(BOMBAS[i].HORA_INICIO);
+        
+        Serial.print("MINUTO_INICIO: ");
+        Serial.println(BOMBAS[i].MINUTO_INICIO);
+        
+        Serial.print("HORA_FIM: ");
+        Serial.println(BOMBAS[i].HORA_FIM);
+        
+        Serial.print("MINUTO_FIM: ");
+        Serial.println(BOMBAS[i].MINUTO_FIM);
+        
+        Serial.print("HORA_FIM_ANTERIOR: ");
+        Serial.println(BOMBAS[i].HORA_FIM_ANTERIOR);
+        
+        Serial.print("MINUTO_FIM_ANTERIOR: ");
+        Serial.println(BOMBAS[i].MINUTO_FIM_ANTERIOR);
+        
+        // Exibindo os arrays
+        for (int j = 0; j < 6; j++) {
+            Serial.print("SETORES[" + String(j) + "]: ");
+            Serial.println(BOMBAS[i].SETORES[j]);
+        }
+
+        for (int j = 0; j < 6; j++) {
+            Serial.print("SETOR_ATIVO[" + String(j) + "]: ");
+            Serial.println(BOMBAS[i].SETOR_ATIVO[j]);
+        }
+
+        for (int j = 0; j < 6; j++) {
+            Serial.print("MINUTOS_SETOR[" + String(j) + "]: ");
+            Serial.println(BOMBAS[i].MINUTOS_SETOR[j]);
+        }
+
+        // Exibindo o controle de irrigação
+        Serial.print("INTERVALO_SETORES: ");
+        Serial.println(BOMBAS[i].INTERVALO_SETORES);
+        
+        Serial.print("HORA: ");
+        Serial.println(BOMBAS[i].HORA);
+        
+        Serial.print("MINUTO: ");
+        Serial.println(BOMBAS[i].MINUTO);
+
+        Serial.print("IRRIGACAO_PARCIAL_TEMPO: ");
+        Serial.println(BOMBAS[i].IRRIGACAO_PARCIAL_TEMPO);
+
+        Serial.print("IRRIGACAO_INICIADA: ");
+        Serial.println(BOMBAS[i].IRRIGACAO_INICIADA);
+
+        Serial.print("CONTINUACAO_IRRIGACAO: ");
+        Serial.println(BOMBAS[i].CONTINUACAO_IRRIGACAO);
+
+        Serial.print("IRRIGACAO_ATIVA: ");
+        Serial.println(BOMBAS[i].IRRIGACAO_ATIVA);
+
+        Serial.print("HORA_PENDENTE: ");
+        Serial.println(BOMBAS[i].HORA_PENDENTE);
+
+        Serial.print("HORA_RESTANTE: ");
+        Serial.println(BOMBAS[i].HORA_RESTANTE);
+
+        Serial.println(); // Separando as bombas
+    }
+
+    file.close();
+    Serial.println("Dados carregados e exibidos da SPIFFS");
+}
+
+String formatDateTime(DateTime dt) {
+    String formattedDate = String(dt.day(), DEC) + "/" + String(dt.month(), DEC) + "/" + String(dt.year(), DEC) + " ";
+    formattedDate += String(dt.hour(), DEC) + ":" + String(dt.minute(), DEC) + ":" + String(dt.second(), DEC);
+    return formattedDate;
+}
+
+void resgatarEDispararDados() {
+    // Abrir o arquivo da SPIFFS para leitura
+    File file = SPIFFS.open("/dados.bin", FILE_READ); // Use o mesmo nome de arquivo que você usou para salvar os dados binários
+    GRUPO bombas[2];  // Defina a estrutura GRUPO que será preenchida com os dados lidos
+
+    if (!file) {
+        Serial.println("Erro ao abrir o arquivo para leitura");
+        return;
+    }
+
+    // Ler os dados do arquivo e armazenar na estrutura GRUPO
+    int i = 0;
+    while (file.available() && i < 2) {  // Lê até 2 bombas, ou até o final do arquivo
+        file.read((uint8_t*)&bombas[i], sizeof(GRUPO)); // Deserializar os dados para a estrutura GRUPO
+        i++;
+    }
+
+    // Fechar o arquivo após a leitura
+    file.close();
+
+    // Enviar os dados lidos através do NRF
+    for (int j = 0; j < i; j++) {  // Enviar as bombas carregadas
+        ENVIA_RADIO(bombas[j]);
+        delay(250);  // Delay entre os envios
+    }
+
+    // Limpar a SPIFFS após o envio bem-sucedido
+    SPIFFS.remove("/dados.bin");
+    Serial.println("[+] Dados da SPIFFS removidos após envio.");
 }
